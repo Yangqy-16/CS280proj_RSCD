@@ -1,1 +1,11 @@
-ChangeFormer/
+ChangeFormer/__pycache__/
+ChangeFormer/CDData/
+ChangeFormer/checkpoints/
+# ChangeFormer/images/
+ChangeFormer/pretrained_changeformer/
+ChangeFormer/vis/
+
+ChangeFormer/data_preparation/__pycache__/
+ChangeFormer/datasets/__pycache__/
+ChangeFormer/misc/__pycache__/
+ChangeFormer/models/__pycache__/
