@@ -17,8 +17,10 @@ from abc import ABCMeta, abstractmethod
 import pdb
 
 from scipy.io import savemat
-
 from models.pixel_shuffel_up import PS_UP
+
+#encoder change:
+from models.mpvit import mpvit_base,mpvit_small,mpvit_xsmall,mpvit_base_old,mpvit_mixCD
 
 class EncoderTransformer(nn.Module):
     def __init__(self, img_size=256, patch_size=16, in_chans=3, num_classes=2, embed_dims=[64, 128, 256, 512],
@@ -1332,7 +1334,7 @@ class EncoderTransformer_v3(nn.Module):
     def __init__(self, img_size=256, patch_size=3, in_chans=3, num_classes=2, embed_dims=[32, 64, 128, 256],
                  num_heads=[2, 2, 4, 8], mlp_ratios=[4, 4, 4, 4], qkv_bias=True, qk_scale=None, drop_rate=0.,
                  attn_drop_rate=0., drop_path_rate=0., norm_layer=nn.LayerNorm,
-                 depths=[3, 3, 6, 18], sr_ratios=[8, 4, 2, 1]):
+                depths=[3, 3, 6, 18], sr_ratios=[ 8, 4, 2, 1]):
         super().__init__()
         self.num_classes    = num_classes
         self.depths         = depths
@@ -1421,39 +1423,38 @@ class EncoderTransformer_v3(nn.Module):
             self.block4[i].drop_path.drop_prob = dpr[cur + i]
 
     def forward_features(self, x):
-        B = x.shape[0]
+        B = x.shape[0]# x [B,3,256,256]
         outs = []
-    
         # stage 1
-        x1, H1, W1 = self.patch_embed1(x)
+        x1, H1, W1 = self.patch_embed1(x)#[B,4096,64] 4096=256*256
         for i, blk in enumerate(self.block1):
             x1 = blk(x1, H1, W1)
-        x1 = self.norm1(x1)
-        x1 = x1.reshape(B, H1, W1, -1).permute(0, 3, 1, 2).contiguous()
+        x1 = self.norm1(x1)#[B,4096,64]
+        x1 = x1.reshape(B, H1, W1, -1).permute(0, 3, 1, 2).contiguous()#[B,64,64,64]
         outs.append(x1)
 
         # stage 2
-        x1, H1, W1 = self.patch_embed2(x1)
+        x1, H1, W1 = self.patch_embed2(x1)#[B,1024,128]
         for i, blk in enumerate(self.block2):
             x1 = blk(x1, H1, W1)
         x1 = self.norm2(x1)
-        x1 = x1.reshape(B, H1, W1, -1).permute(0, 3, 1, 2).contiguous()
+        x1 = x1.reshape(B, H1, W1, -1).permute(0, 3, 1, 2).contiguous()#[B,128,32,32]
         outs.append(x1)
 
         # stage 3
-        x1, H1, W1 = self.patch_embed3(x1)
+        x1, H1, W1 = self.patch_embed3(x1)#[B,256,320]
         for i, blk in enumerate(self.block3):
             x1 = blk(x1, H1, W1)
         x1 = self.norm3(x1)
-        x1 = x1.reshape(B, H1, W1, -1).permute(0, 3, 1, 2).contiguous()
+        x1 = x1.reshape(B, H1, W1, -1).permute(0, 3, 1, 2).contiguous()#[B,320,16,16]
         outs.append(x1)
 
         # stage 4
-        x1, H1, W1 = self.patch_embed4(x1)
+        x1, H1, W1 = self.patch_embed4(x1)#[B,64,512]
         for i, blk in enumerate(self.block4):
             x1 = blk(x1, H1, W1)
         x1 = self.norm4(x1)
-        x1 = x1.reshape(B, H1, W1, -1).permute(0, 3, 1, 2).contiguous()
+        x1 = x1.reshape(B, H1, W1, -1).permute(0, 3, 1, 2).contiguous()#[B,512,8,8]
         outs.append(x1)
         return outs
 
@@ -1566,6 +1567,7 @@ class DecoderTransformer_v3(nn.Module):
         _c4_up= resize(_c4, size=c1_2.size()[2:], mode='bilinear', align_corners=False)
 
         # Stage 3: x1/16 scale
+        
         _c3_1 = self.linear_c3(c3_1).permute(0,2,1).reshape(n, -1, c3_1.shape[2], c3_1.shape[3])
         _c3_2 = self.linear_c3(c3_2).permute(0,2,1).reshape(n, -1, c3_2.shape[2], c3_2.shape[3])
         _c3   = self.diff_c3(torch.cat((_c3_1, _c3_2), dim=1)) + F.interpolate(_c4, scale_factor=2, mode="bilinear")
@@ -1657,7 +1659,7 @@ class ChangeFormerV5(nn.Module):
 # ChangeFormerV6:
 class ChangeFormerV6(nn.Module):
 
-    def __init__(self, input_nc=3, output_nc=2, decoder_softmax=False, embed_dim=256):
+    def __init__(self, input_nc=3, output_nc=2, decoder_softmax=False, embed_dim=256, mpvit_typ=None, mpvit_path=None):
         super(ChangeFormerV6, self).__init__()
         #Transformer Encoder
         self.embed_dims = [64, 128, 320, 512]
@@ -1666,25 +1668,61 @@ class ChangeFormerV6(nn.Module):
         self.drop_rate = 0.1
         self.attn_drop = 0.1
         self.drop_path_rate = 0.1 
+        self.mpvit_typ = mpvit_typ
+        self.pre_base = None
 
-        self.Tenc_x2    = EncoderTransformer_v3(img_size=256, patch_size = 7, in_chans=input_nc, num_classes=output_nc, embed_dims=self.embed_dims,
-                 num_heads = [1, 2, 4, 8], mlp_ratios=[4, 4, 4, 4], qkv_bias=True, qk_scale=None, drop_rate=self.drop_rate,
-                 attn_drop_rate = self.attn_drop, drop_path_rate=self.drop_path_rate, norm_layer=partial(nn.LayerNorm, eps=1e-6),
-                 depths=self.depths, sr_ratios=[8, 4, 2, 1])
-        
+        if mpvit_typ is not None :
+            print(f"Using mpvit_{mpvit_typ}")
+            if mpvit_typ == "xsmall":
+                self.Tenc_x2 = mpvit_xsmall() #differs on num_layers
+            elif mpvit_typ == "base":
+                self.Tenc_x2 = mpvit_base()
+            elif mpvit_typ == "small":
+                self.Tenc_x2 = mpvit_small()
+            elif mpvit_typ == "base_old":   #the original mpvit loading weights pretrained on  ImageNet
+                self.Tenc_x2 = mpvit_base_old()
+                self.embed_dims = [224,368,480,480]
+                self.pre_base = nn.Sequential(
+                nn.Conv2d(3, 3, kernel_size=16, stride=1),
+                nn.Conv2d(3, 3, kernel_size=8, stride=1),
+                nn.Conv2d(3, 3, kernel_size=8, stride=1),
+                nn.Conv2d(3, 3, kernel_size=4, stride=1))
+                self.upsample_blks = nn.ModuleList([torch.nn.Upsample( size=(s,s), mode='bilinear' ) for s in [8, 16, 32, 64, 256]])
+            elif mpvit_typ == "mixCD" :  #mpvit using ChangeFormer's transformer
+                mpvit_path = [ int(num) for num in mpvit_path.split(",") ]
+                self.Tenc_x2 = mpvit_mixCD( path = mpvit_path )
+                
+        else :
+            print(f"Using original ChangeFormer Encoder")
+            self.Tenc_x2 = EncoderTransformer_v3(img_size=256, patch_size = 7, in_chans=input_nc, num_classes=output_nc, embed_dims=self.embed_dims, 
+                                  num_heads = [1, 2, 4, 8], mlp_ratios=[4, 4, 4, 4], qkv_bias=True, qk_scale=None, drop_rate=self.drop_rate, attn_drop_rate = self.attn_drop, drop_path_rate=self.drop_path_rate, norm_layer=partial(nn.LayerNorm, eps=1e-6), depths=self.depths, sr_ratios=[8, 4, 2, 1])
+            
         #Transformer Decoder
         self.TDec_x2   = DecoderTransformer_v3(input_transform='multiple_select', in_index=[0, 1, 2, 3], align_corners=False, 
                     in_channels = self.embed_dims, embedding_dim= self.embedding_dim, output_nc=output_nc, 
                     decoder_softmax = decoder_softmax, feature_strides=[2, 4, 8, 16])
 
     def forward(self, x1, x2):
-
+        if self.mpvit_typ == "base_old":
+            x1 = self.pre_base(x1)
+            x2 = self.pre_base(x2)
+        
         [fx1, fx2] = [self.Tenc_x2(x1), self.Tenc_x2(x2)]
-
+        
         cp = self.TDec_x2(fx1, fx2)
-
         # # Save to mat
         # save_to_mat(x1, x2, fx1, fx2, cp, "ChangeFormerV4")
 
+        if self.mpvit_typ == "base_old":
+            for i,blk in enumerate(self.upsample_blks) :
+                cp[i] = blk(cp[i])
+
         # exit()
         return cp
+
+
+if __name__ == "__main__":
+    model = ChangeFormerV6()
+    x1 = torch.randn(2, 3, 256, 256)
+    x2 = torch.randn(2, 3, 256, 256)
+    cp = model(x1,x2)
