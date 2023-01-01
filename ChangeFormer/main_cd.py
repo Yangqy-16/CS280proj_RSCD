@@ -59,6 +59,9 @@ if __name__ == '__main__':
                         help='base_resnet18 | base_transformer_pos_s4 | '
                              'base_transformer_pos_s4_dd8 | '
                              'base_transformer_pos_s4_dd8_dedim8|ChangeFormerV5|SiamUnet_diff')
+    parser.add_argument('--mpvit_typ', default=None, type=str, help='xsmall | small | base |'
+                        'base_old | mixCD (mpvit using transformer of ChangeFormer)' )  #new line
+    parser.add_argument('--mpvit_path', default=None, type=str )  #new line
     parser.add_argument('--loss', default='ce', type=str)
 
     # optimizer
@@ -72,6 +75,8 @@ if __name__ == '__main__':
     args = parser.parse_args()
     utils.get_device(args)
     print(args.gpu_ids)
+    
+    print("mpvit_path",type(args.mpvit_path))
     
     #  checkpoints dir
     args.checkpoint_dir = os.path.join(args.checkpoint_root, args.project_name)
