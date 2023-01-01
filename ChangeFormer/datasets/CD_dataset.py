@@ -71,6 +71,8 @@ class ImageDataset(data.Dataset):
                 with_random_vflip=True,
                 with_scale_random_crop=True,
                 with_random_blur=True,
+                with_random_sharpness = True,  #
+                with_random_contrast = True,  #
                 random_color_tf=True
             )
         else:

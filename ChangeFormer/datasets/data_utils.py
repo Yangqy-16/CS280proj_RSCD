@@ -31,6 +31,8 @@ class CDDataAugmentation:
             with_random_crop=False,
             with_scale_random_crop=False,
             with_random_blur=False,
+            with_random_sharpness=False, #
+            with_random_contrast=False, # 
             random_color_tf=False
     ):
         self.img_size = img_size
@@ -44,6 +46,8 @@ class CDDataAugmentation:
         self.with_random_crop = with_random_crop
         self.with_scale_random_crop = with_scale_random_crop
         self.with_random_blur = with_random_blur
+        self.with_random_sharpness = with_random_sharpness #
+        self.with_random_contrast = with_random_contrast #
         self.random_color_tf=random_color_tf
     def transform(self, imgs, labels, to_tensor=True):
         """
@@ -68,16 +72,30 @@ class CDDataAugmentation:
             if labels[0].size != (self.img_size, self.img_size):
                 labels = [TF.resize(img, [self.img_size, self.img_size], interpolation=0)
                         for img in labels]
-
-        random_base = 0.5
+        """    
         if self.with_random_hflip and random.random() > 0.5:
             imgs = [TF.hflip(img) for img in imgs]
             labels = [TF.hflip(img) for img in labels]
-
+        """
+            
+        if self.with_random_hflip :
+            hflipper = transforms.RandomHorizontalFlip(p=0.5)
+            imgs = [ hflipper(img) for img in imgs ]
+            labels = [hflipper(img) for img in labels]
+            
+        """
         if self.with_random_vflip and random.random() > 0.5:
             imgs = [TF.vflip(img) for img in imgs]
             labels = [TF.vflip(img) for img in labels]
-
+        """
+            
+        if self.with_random_vflip :
+            vflipper = transforms.RandomVerticalFlip(p=0.5)
+            imgs = [ vflipper(img) for img in imgs ]
+            labels = [ vflipper(img) for img in labels]
+      
+      
+        random_base = 0.5
         if self.with_random_rot and random.random() > random_base:
             angles = [90, 180, 270]
             index = random.randint(0, 2)
@@ -118,7 +136,18 @@ class CDDataAugmentation:
             radius = random.random()
             imgs = [img.filter(ImageFilter.GaussianBlur(radius=radius))
                     for img in imgs]
+        
+        #
+        if self.with_random_sharpness :
+            sharpness_adjuster = transforms.RandomAdjustSharpness(sharpness_factor=2, p=0.5)
+            imgs = [ sharpness_adjuster(img) for img in imgs ]
 
+        #
+        if self.with_random_contrast :
+            autocontraster = transforms.RandomAutocontrast(p=0.5)
+            imgs = [ autocontraster(img) for img in imgs ]
+        
+        
         if self.random_color_tf:
             color_jitter = transforms.ColorJitter(brightness=0.3, contrast=0.3, saturation=0.3, hue=0.3)
             imgs_tf = []
